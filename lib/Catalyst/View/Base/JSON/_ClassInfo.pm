@@ -1,12 +1,16 @@
 package Catalyst::View::Base::JSON::_ClassInfo;
 
 use Moo;
+use Scalar::Util;
+use Catalyst::Utils;
 
 our $DEFAULT_JSON_CLASS = 'JSON::MaybeXS';
 our $DEFAULT_CONTENT_TYPE = 'application/json';
 our %JSON_INIT_ARGS = (
   utf8 => 1,
   convert_blessed => 1);
+
+has [qw/_original_args _instance_class _fields/] => (is=>'ro', required=>1);
 
 has json => (
   is=>'ro',
@@ -32,14 +36,19 @@ has returns_status => (
   predicate=>'has_returns_status');
 
 sub HANDLE_ENCODE_ERROR {
-  my ($view, $err) = @_;
-  return $view->http_internal_server_error({ error => "$err"})->detach;
+  my ($self, $view, $unencodable_ref, $err) = @_;
+  if($self->has_handle_encode_error) {
+    $self->has_handle_encode_error->($view, $unencodable_ref, $err);
+  } else {
+    return $view->ctx->debug ?
+      $view->response(400, { error => "$err", original=>$unencodable_ref})->detach :
+        $view->response(400, { error => "$err"})->detach;
+  }
 }
 
 has handle_encode_error => (
   is=>'ro',
-  required=>1,
-  default=>\&HANDLE_ENCODE_ERROR);
+  predicate=>'has_handle_encode_error');
 
 has json_class => (
   is=>'ro',
@@ -56,7 +65,6 @@ has json_init_args => (
     my $self = shift;
     my %init = (%JSON_INIT_ARGS, $self->has_json_extra_init_args ?
       %{$self->json_extra_init_args} : ());
-
     return \%init;
   });
 
@@ -65,6 +73,48 @@ has json_extra_init_args => (
   predicate=>'has_json_extra_init_args');
 
 has callback_param => ( is=>'ro', predicate=>'has_callback_param');
+
+my $get_stash_key = sub {
+  my $self = shift;
+  my $key = Scalar::Util::blessed($self) ?
+    Scalar::Util::refaddr($self) :
+      $self;
+  return "__Pure_${key}";
+};
+
+my $prepare_args = sub {
+  my ($self, @args) = @_;
+  my %args = ();
+  if(scalar(@args) % 2) { # odd args means first one is an object.
+    my $proto = shift @args;
+    foreach my $field (@{$self->_fields||[]}) {
+      if(my $cb = $proto->can($field)) { # match object methods to available fields
+        $args{$field} = $proto->$field;
+      }
+    }
+  }
+  %args = (%args, @args);
+  return Catalyst::Utils::merge_hashes($self->_original_args, \%args);
+};
+
+sub ACCEPT_CONTEXT {
+  my ($self, $c, @args) = @_;
+  die "View ${\$self->_instance_class->catalyst_component_name} can only be called with a context"
+    unless Scalar::Util::blessed($c);
+
+  my $stash_key = $self->$get_stash_key;
+  $c->stash->{$stash_key} ||= do {
+    my $args = $self->$prepare_args(@args);
+    my $new = $self->_instance_class->new(
+      %{$args},
+      %{$c->stash},
+    );
+    $new->{__class_info} = $self;
+    $new->{__ctx} = $c;
+    $new;
+  };
+  return $c->stash->{$stash_key};    
+}
 
 1;
 

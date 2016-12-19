@@ -4,7 +4,6 @@ use warnings;
 package Catalyst::View::Base::JSON;
 
 use base 'Catalyst::View';
-use Catalyst::Utils;
 use HTTP::Status;
 use Scalar::Util;
 
@@ -25,13 +24,14 @@ my $inject_http_status_helpers = sub {
   }
 };
 
-my @fields;
 my $find_fields = sub {
   my $class = shift;
+  my @fields = ();
   for ($class->meta->get_all_attributes) {
     next unless $_->has_init_arg;
     push @fields, $_->init_arg;
   }
+  return @fields;
 };
 
 sub _build_class_info {
@@ -43,51 +43,12 @@ sub _build_class_info {
 sub COMPONENT {
   my ($class, $app, $args) = @_;
   $args = $class->merge_config_hashes($class->config, $args);
+  $args->{_instance_class} = $class;
+  $args->{_original_args} = $args;
+  $args->{_fields} = [$class->$find_fields];
   $class->$inject_http_status_helpers($args);
-  $class->$find_fields;
-  return bless [$class->_build_class_info($args)], $class;
-}
 
-my $get_stash_key = sub {
-  my $self = shift;
-  my $key = Scalar::Util::blessed($self) ?
-    Scalar::Util::refaddr($self) :
-      $self;
-  return "__Pure_${key}";
-};
-
-my $prepare_args = sub {
-  my ($self, @args) = @_;
-  my %args = ();
-  if(scalar(@args) % 2) { # odd args means first one is an object.
-    my $proto = shift @args;
-    foreach my $field (@fields) {
-      if(my $cb = $proto->can($field)) { # match object methods to available fields
-        $args{$field} = $proto->$field;
-      }
-    }
-  }
-  %args = (%args, @args);
-  return $self->merge_config_hashes($self->config, \%args);
-};
-
-sub ACCEPT_CONTEXT {
-  my ($self, $c, @args) = @_;
-  die "View ${\$self->catalyst_component_name} can only be called with a context"
-    unless Scalar::Util::blessed($c);
-
-  my $stash_key = $self->$get_stash_key;
-  $c->stash->{$stash_key} ||= do {
-    my $args = $self->$prepare_args(@args);
-    my $new = ref($self)->new(
-      %{$args},
-      %{$c->stash},
-    );
-    $new->{__class_info} = $self->[0];
-    $new->{__ctx} = $c;
-    $new;
-  };
-  return $c->stash->{$stash_key};    
+  return $class->_build_class_info($args);
 }
 
 sub ctx { return $_[0]->{__ctx} }
@@ -105,6 +66,14 @@ sub response {
   ){
     $status = shift @proto;
   }
+
+  my $possible_override_data = '';
+  if(
+    ((ref($proto[-1])||'') eq 'HASH') ||
+    Scalar::Util::blessed($proto[-1])
+  ) {
+    $possible_override_data = pop(@proto);
+  }
  
   my @headers = ();
   if(@proto) {
@@ -113,13 +82,12 @@ sub response {
 
   for($self->ctx->response) {
     $_->headers->push_header(@headers) if @headers;
-    $_->status($status) unless $res->status != 200; # Catalyst default is 200...
-    $_->content_type($self->$class_info->content_type) unless $res->content_type;
-
+    $_->status($status) unless $_->status != 200; # Catalyst default is 200...
+    $_->content_type($self->$class_info->content_type) unless $_->content_type;
     unless($_->has_body) {
-      my $json = $self->render;
+      my $json = $self->render($possible_override_data);
       if(my $param = $self->$class_info->callback_param) {
-        my $cb = $c->req->query_parameter($cbparam);
+        my $cb = $_->query_parameter($self->$class_info->callback_param);
         $cb =~ /^[a-zA-Z0-9\.\_\[\]]+$/ || die "Invalid callback parameter $cb";
         $json = "$cb($json)";
       }
@@ -129,24 +97,28 @@ sub response {
 }
 
 sub render {
-  my $self = shift;
+  my ($self, $possible_override_data) = @_;
+  my $to_json_encode = $possible_override_data ? $possible_override_data : $self;
   my $json = eval {
-    $self->$class_info->json->encode($self);
+    $self->$class_info->json->encode($to_json_encode);
   } || do {
-    if(my $cb = $self->$class_info->handle_encode_error) {
-      return $cb->($self, $@);
-    } else {
-      die $@;
-    }
+    $self->$class_info->HANDLE_ENCODE_ERROR($self, $to_json_encode, $@);
   };
   return $json;
 }
 
 sub uri {
   my ($self, $action_proto, @args) = @_;
-  my $action = $action=~m/^\// ?
+
+  # Is an action object
+  return $self->ctx->uri_for($action_proto, @args)
+  if Scalar::Util::blessed($action_proto);
+
+  # Is an absolute or relative (to the current controller) action private name.
+  my $action = $action_proto=~m/^\// ?
     $self->ctx->dispatcher->get_action_by_path($action_proto) :
       $self->ctx->controller->action_for($action_proto);
+      
   return $self->ctx->uri_for($action, @args);
 }
 
@@ -169,15 +141,14 @@ This view defines the following methods
 
 =head2 response
 
-    $view->response($status, @headers, \%data||$object);
-    $view->response($status, \%data||$object);
-    $view->response(\%data||$object);
     $view->response($status);
     $view->response($status, @headers);
+    $view->response(@headers);
+
 
 Used to setup a response.  Calling this method will setup an http status, finalize
-headers and set a body response for the JSON.  Content type will be set to
-'application/json' automatically (you don't need to set this in a header).
+headers and set a body response for the JSON.  Content type will be set based on
+your 'content_type' configuration value (or 'application/json' by default).
 
 =head2 Method '->response' Helpers
 
@@ -205,7 +176,9 @@ class (or L<Catalyst::Action::RenderView>).
 
 =head1 ATTRIBUTES
 
-This View defines the following attributes that can be set during configuration
+See L<Catalyst::View::Base::JSON::_ClassInfo> for application level configuration.
+You may also defined custom attributes in your base class and assign values via
+configuration.
 
 =head1 SEE ALSO
 

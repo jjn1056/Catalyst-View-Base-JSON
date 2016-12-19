@@ -1,7 +1,7 @@
 use Test::Most;
 
 {
-  package MyApp::View::JSON;
+  package MyApp::View::Person;
 
   use Moo;
   extends 'Catalyst::View::Base::JSON';
@@ -17,15 +17,15 @@ use Test::Most;
     };
   }
 
-  $INC{'MyApp/View/JSON.pm'} = __FILE__;
+  $INC{'MyApp/View/Person.pm'} = __FILE__;
 
   package MyApp::Controller::Root;
   use base 'Catalyst::Controller';
 
   sub example :Local Args(0) {
     my ($self, $c) = @_;
-    $->stash(age=>32);
-    $c->view(name=>'John')->http_ok;
+    $c->stash(age=>32);
+    $c->view('Person', name=>'John')->http_ok;
   }
 
   sub root :Chained('/') CaptureArgs(0) {
@@ -47,9 +47,8 @@ use Test::Most;
   use Catalyst;
 
   MyApp->config(
-    default_view =>'JSON',
     'Controller::Root' => { namespace => '' },
-    'View::JSON' => {
+    'View::Person' => {
       returns_status => [200, 404],
       api_version => '1.1',
     },
