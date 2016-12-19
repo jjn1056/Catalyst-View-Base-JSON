@@ -83,7 +83,12 @@ sub response {
   for($self->ctx->response) {
     $_->headers->push_header(@headers) if @headers;
     $_->status($status) unless $_->status != 200; # Catalyst default is 200...
-    $_->content_type($self->$class_info->content_type) unless $_->content_type;
+    $_->content_type($self->$class_info->content_type)
+      unless $_->content_type;
+
+    $self->amend_headers($_->headers)
+      if $self->can('amend_headers');
+
     unless($_->has_body) {
       my $json = $self->render($possible_override_data);
       if(my $param = $self->$class_info->callback_param) {
@@ -133,7 +138,82 @@ Catalyst::View::Base::JSON - a 'base' JSON View
 
 =head1 SYNOPSIS
 
+    package MyApp::View::Person;
+
+    use Moo;
+    use Types::Standard;
+    use MyApp::Types qw/Version/;
+
+    extends 'Catalyst::View::Base::JSON';
+
+    has name => (
+     is=>'ro',
+     isa=>Str,
+     required=>1);
+
+    has age => (
+     is=>'ro',
+     isa=>Int,
+     required=>1);
+
+    has age => (
+     is=>'ro',
+     isa=>Version,
+     required=>1);
+
+    sub amend_headers {
+      my ($self, $headers) = @_;
+      $headers->push_header(Accept => 'application/json');
+    }
+
+    sub TO_JSON {
+      my $self = shift;
+      return +{
+        name => $self->name,
+        age => $self->age,
+        api => $self->api_version,
+      };
+    }
+
+    package MyApp::Controller::Root;
+    use base 'Catalyst::Controller';
+
+    sub example :Local Args(0) {
+      my ($self, $c) = @_;
+      $c->stash(age=>32);
+      $c->view('Person', name=>'John')->http_ok;
+    }
+
+    package MyApp;
+    
+    use Catalyst;
+
+    MyApp->config(
+      'Controller::Root' => { namespace => '' },
+      'View::Person' => {
+        returns_status => [200, 404],
+        api_version => '1.1',
+      },
+    );
+
+    MyApp->setup;
+
+
 =head1 DESCRIPTION
+
+This is a Catalyst view that lets you create one view per reponse type of JSON
+you are generating.  Because you are creating one view per reponse type that means
+you can define an interface for that view which is strongly typed.  Also, since
+the view is per request, it has access to the context, as well as some helpers
+for creating URLs.  You may find that this helps make your controllers more
+simple and promote reuse of view code.
+
+I consider this work partly a thought experiment.  Documentation and test coverage
+are currently light and I might change parts of the way exceptions are handled.  If
+you are producing JSON with L<Catalyst> and new to the framework you might want to
+consider 'tried and true' approaches such as L<Catalyst::View:::JSON> or
+L<Catalyst::Action::REST>.  My intention here is to get people to start thinking
+about views with stronger interfaces.
 
 =head1 METHODS
 
@@ -163,6 +243,26 @@ request types more simple and more descriptive.  The following are the same:
 
 See L<HTTP::Status> for a full list of all the status code helpers.
 
+=head2 ctx
+
+Returns the current context associated with the request creating this view.
+
+=head2 uri ($action|$action_name|$relative_action_name)
+
+Helper used to create links.  Example:
+
+    sub TO_JSON {
+      my $self = shift;
+      return +{
+        name => $self->name,
+        age => $self->age,
+        friends => $self->uri('friends', $self->id),
+      };
+    }
+
+The arguments are basically the same as $c->uri_for except that the first argument
+may be a full or relative action path.
+
 =head2 render
 
 Returns a string which is the JSON represenation of the current View.  Usually you
@@ -179,6 +279,19 @@ class (or L<Catalyst::Action::RenderView>).
 See L<Catalyst::View::Base::JSON::_ClassInfo> for application level configuration.
 You may also defined custom attributes in your base class and assign values via
 configuration.
+
+=head1 UTF-8 NOTES
+
+Generally a view should not do any encoding since the core L<Catalyst>
+framework handles all this for you.  However, historically the popular
+Catalyst JSON views and related ecosystem (such as L<Catalyst::Action::REST>)
+have done UTF8 encoding and as a result for compatibility core Catalyst code
+will assume a response content type of 'application/json' is already UTF8 
+encoded.  So even though this is a new module, we will continue to maintain this
+historical situation for compatibility reasons.  As a result the UTF8 encoding
+flags will be enabled and expect the contents of $c->res->body to be encoded
+as expected.  If you set your own JSON class for encoding, or set your own
+initialization arguments, please keep in mind this expectation.
 
 =head1 SEE ALSO
 

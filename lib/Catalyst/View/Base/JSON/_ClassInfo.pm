@@ -206,8 +206,9 @@ will NOT bubble the error up to the global L<Catalyst> error handling (we don't
 set $c->error for example).  If you want that you need to set it yourself in
 a custom handler, or don't define one.
 
-The subroutine receives two arguments: the view object and the exception. You
-must setup a new, valid response.  For example:
+The subroutine receives three arguments: the view object, the original reference
+that failed to encode and the exception. You must setup a new, valid response.
+For example:
 
     package MyApp::View::JSON;
 
@@ -222,26 +223,14 @@ must setup a new, valid response.  For example:
       default_view =>'JSON',
       'View::JSON' => {
         handle_encode_error => sub {
-          my ($view, $err) = @_;
-          $view->http_bad_request({ err => "$err"})->detach;
+          my ($view, $original_bad_ref, $err) = @_;
+          $view->response(400, { error => "$err"})->detach;
         },
       },
     );
 
     MyApp->setup;
 
-Or setup/override per context:
-
-    sub error :Local Args(0) {
-      my ($self, $c) = @_;
-
-      $c->view->set_handle_encode_error(sub {
-          my ($view, $err) = @_;
-          $view->http_bad_request({ err => "$err"})->detach
-        });
-
-      $c->view->http_ok( $bad_data );
-    }
 
 B<NOTE> If you mess up the return value (you return something that can't be
 encoded) a second exception will occur which will NOT be handled and will then
@@ -250,22 +239,9 @@ bubble up to the main application.
 B<NOTE> We define a rational default for this to get you started:
 
     sub HANDLE_ENCODE_ERROR {
-      my ($view, $err) = @_;
-      $view->http_internal_server_error({ error => "$err"})->detach;
+      my ($view, $orginal_bad_ref, $err) = @_;
+      $view->response(400, { error => "$err"})->detach;
     }
-
-=head1 UTF-8 NOTES
-
-Generally a view should not do any encoding since the core L<Catalyst>
-framework handles all this for you.  However, historically the popular
-Catalyst JSON views and related ecosystem (such as L<Catalyst::Action::REST>)
-have done UTF8 encoding and as a result for compatibility core Catalyst code
-will assume a response content type of 'application/json' is already UTF8 
-encoded.  So even though this is a new module, we will continue to maintain this
-historical situation for compatibility reasons.  As a result the UTF8 encoding
-flags will be enabled and expect the contents of $c->res->body to be encoded
-as expected.  If you set your own JSON class for encoding, or set your own
-initialization arguments, please keep in mind this expectation.
 
 =head1 SEE ALSO
 

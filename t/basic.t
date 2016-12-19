@@ -28,18 +28,6 @@ use Test::Most;
     $c->view('Person', name=>'John')->http_ok;
   }
 
-  sub root :Chained('/') CaptureArgs(0) {
-    my ($self, $c) = @_;
-  }
-
-  sub a :Chained(root) CaptureArgs(0) {
-    my ($self, $c) = @_;
-  }
-
-  sub b :Chained(a) Args(0) {
-    my ($self, $c) = @_;
-  }
-
   $INC{'MyApp/Controller/Root.pm'} = __FILE__;
 
   package MyApp;
@@ -64,14 +52,10 @@ use JSON::MaybeXS;
   ok my ($res, $c) = ctx_request( '/example' );
   is $res->code, 200;
   
-  my %json = %{ decode_json $res->content };
-
-  use Devel::Dwarn;
-  Dwarn \%json;
-
-#  is $json{a}, 1;
-  # is $json{b}, 2;
-  # is $json{c}, 3;
+  ok my %json = eval { %{ decode_json $res->content } };
+  is $json{name}, 'John';
+  is $json{age}, '32';
+  is $json{api}, '1.1';
 }
 
 done_testing;
