@@ -156,7 +156,7 @@ Catalyst::View::Base::JSON - a 'base' JSON View
      isa=>Int,
      required=>1);
 
-    has age => (
+    has api_version => (
      is=>'ro',
      isa=>Version,
      required=>1);
