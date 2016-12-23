@@ -139,7 +139,7 @@ Catalyst::View::Base::JSON - a 'base' JSON View
 =for html
 <a href="https://badge.fury.io/pl/Catalyst-View-Base-JSON"><img src="https://badge.fury.io/pl/Catalyst-View-Base-JSON.svg" alt="CPAN version" height="18"></a>
 <a href="https://travis-ci.org/jjn1056/Catalyst-View-Base-JSON/"><img src="https://api.travis-ci.org/jjn1056/Catalyst-View-Base-JSON.png" alt="https://api.travis-ci.org/jjn1056/Catalyst-View-Base-JSON.png"></a>
-<a href="http://cpants.cpanauthors.org/dist/Catalyst-View-Base-JSON"><img src="http://cpants.cpanauthors.org/dist/Catalyst-View-Base-JSON".png" alt='Kwalitee Score' /></a>
+<a href="http://cpants.cpanauthors.org/dist/Catalyst-View-Base-JSON"><img src="http://cpants.cpanauthors.org/dist/Catalyst-View-Base-JSON.png" alt='Kwalitee Score' /></a>
 
 =head1 SYNOPSIS
 
