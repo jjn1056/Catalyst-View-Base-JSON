@@ -7,7 +7,7 @@ use base 'Catalyst::View';
 use HTTP::Status;
 use Scalar::Util;
 
-our $VERSION = 0.001;
+our $VERSION = 0.002;
 our $CLASS_INFO = 'Catalyst::View::Base::JSON::_ClassInfo';
 
 my $inject_http_status_helpers = sub {
@@ -69,6 +69,7 @@ sub response {
 
   my $possible_override_data = '';
   if(
+    @proto && $proto[-1] &&
     ((ref($proto[-1])||'') eq 'HASH') ||
     Scalar::Util::blessed($proto[-1])
   ) {
