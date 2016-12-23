@@ -69,9 +69,11 @@ sub response {
 
   my $possible_override_data = '';
   if(
-    @proto && $proto[-1] &&
-    ((ref($proto[-1])||'') eq 'HASH') ||
-    Scalar::Util::blessed($proto[-1])
+    @proto &&
+    (
+      ((ref($proto[-1])||'') eq 'HASH') ||
+      Scalar::Util::blessed($proto[-1])
+    )
   ) {
     $possible_override_data = pop(@proto);
   }
